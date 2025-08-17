@@ -2,6 +2,19 @@
 
 This repository contains a **proof-of-concept AI Vtuber system**. It demonstrates a basic AI-driven VTuber with text-to-speech, Discord integration, and memory capabilities.  
 
+## Dependencies / Requirements
+
+This project relies on a few external tools and services:
+
+- **VTube Studio** – Required for controlling the VTuber avatar.  
+- **Discord** – For chat interactions (requires a bot token).  
+- **Gemini API** – AI model integration.  
+- **ElevenLabs API** – Text-to-speech service.  
+- **FISH Audio API** – Optional audio service.  
+- **Python 3.12+** – All scripts are tested on this version.  
+- **Required Python packages** – Listed in `requirements.txt`.
+
+
 > **Note:** This prototype was developed on a machine with limited resources. Running a full-featured, high-performance VTuber AI requires significantly more computing power and memory. Until then, this system demonstrates a basic, resource-light proof-of-concept.
 
 
