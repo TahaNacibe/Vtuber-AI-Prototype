@@ -1,11 +1,12 @@
 import faiss
 import numpy as np
+
+from logs.funcs.log_prints import print_log_message
 from .embedder import Embedder
 
 
 class FAISS_SEARCH:
     def __init__(self, ids, vectors):
-        
         # safety neth to ensure the vectors are in the correct format
         if len(vectors.shape) != 2:
             raise ValueError(f"Expected a 2D array for vectors, but got shape {self.vectors.shape}")

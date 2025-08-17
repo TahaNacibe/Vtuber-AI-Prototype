@@ -2,3 +2,20 @@ venv
 .vscode
 /db/memories.db
 .env
+pyvts_token.txt
+logs/data/run_logs.log
+*.db
+# Python cache
+__pycache__/
+*.pyc
+
+# Database files
+*.db
+memory_v2/db/
+
+# Logs
+logs/
+logs/**
+
+# Personal or sensitive text files
+personality.txt

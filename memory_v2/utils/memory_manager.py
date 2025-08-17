@@ -8,30 +8,27 @@ import numpy as np
 from datetime import datetime
 import ast
 # external func
+from logs.funcs.log_prints import print_log_message
 from memory_v2.funcs import faiss_search
 from memory_v2.funcs.embedder import Embedder
-from memory_v2.funcs.memory_utils import filter_with_fallback, second_level_filtering
-
-
-#? Hyper Params
-threshold = 1.75
-
-
-
+from memory_v2.funcs.memory_utils import filter_with_fallback, second_level_filtering, third_level_filtering
 
 
 class MemoryManager:    
     #* That will initialize the memory manager with a database path
-    def __init__(self,db_path="memory_v2/db/memories.db"):        
-        # manage db
+    def __init__(self,similarity_threshold,db_path):      
+        
+        #* manage db
         self.conn = sqlite3.connect(db_path)
-        #* create the database connection and table if it doesn't exist (only should work once)
         self.cursor = self.conn.cursor()
         self._create_table()
-        # self.cursor.execute("PRAGMA table_info(memories);")
         
+        #* create the database connection and table if it doesn't exist (only should work once)
+        self.similarity_threshold = similarity_threshold
         self.embedder = Embedder()
         ids, vectors = self.load_all_memories()
+        
+        #* start FAISS search 
         self.faiss_engine = faiss_search.FAISS_SEARCH(ids, vectors)
     
     
@@ -72,7 +69,8 @@ class MemoryManager:
             weight REAL,
             attachment REAL,
             lifespan INTEGER,
-            last_used TEXT
+            last_used TEXT,
+            memory_related_to TEXT
         )
         ''')
         self.conn.commit()
@@ -83,18 +81,19 @@ class MemoryManager:
         
         
     #* now come the real functions that handle memory
-    def add_new_memory(self, text, embedding, tokens, wight=1.0, attachment=1.0, lifespan=3600):
+    def add_new_memory(self, text, embedding, tokens, wight=1.0, attachment=1.0, lifespan=3600, memory_related_to="global"):
         
         #? more SQL code, INSERT INTO will insert data into the table specified
         self.cursor.execute('''
-        INSERT INTO memories (text, embedding, tokens, weight, attachment, lifespan, last_used)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO memories (text, embedding, tokens, weight, attachment, lifespan, last_used, memory_related_to)
+        VALUES (?, ?, ?, ?, ?, ?, ?,?)
         ''', 
         (text, 
         json.dumps(embedding.tolist()), 
         json.dumps(tokens), wight, 
         attachment, lifespan, 
-        datetime.now().isoformat()))
+        datetime.now().isoformat(),
+        memory_related_to))
         
         #? commit the changes to the database (i had to debug for a while to figure out that this is needed (0o0))
         self.conn.commit()
@@ -110,37 +109,79 @@ class MemoryManager:
 
         self.faiss_engine.index.add_with_ids(embedding_np, ids_np)
         
-        
+    
+    # load all saved memories for displaying
     def get_all_for_view(self):
         self.cursor.execute("SELECT id, text FROM memories")
         result = self.cursor.fetchall()
-        print(result)
         return result
         
+    
     #load specific memory by filtering
-    def get_memories(self, query ,limit=90):
+    def get_memories(self, query ,user_name,limit=200, 
+        user_related_ratio = 0.5, 
+        other_users_related_ratio = 0.25, 
+        globally_related_ratio = 0.25, 
+        memories_count_threshold = 100,
+    ):
         # get memories ids
         ids, distances = self.faiss_engine.search(query, limit)
+        
         #? just to not end up debugging the wrong thing if something went wrong in the FAISS
-        if ids is None or ids.size == 0:
+        if ids is None:
             raise Exception("IDs array is empty or None")
 
-        filtered_list = filter_with_fallback(ids, distances, threshold)
+        #? check if the FAISS is returning items where found
+        if ids.size == 0:
+            print_log_message("No Memories related were found!")
+        
+        #? filter
+        filtered_list = filter_with_fallback(ids, distances, self.similarity_threshold)
         if(len(filtered_list) == 0):
-            raise Exception("no entries in the filtered list")
-        
-        
-        print(f"filtered ids list is {filtered_list}")
-        if len(filtered_list) > 0:
-            print(f"Found {len(filtered_list)} IDs for the query: {query}")
+            print_log_message("No Memories related were found After filtering!")
         
         
         #? SQL code to select the memories by id
         placeholders = ','.join('?' for _ in filtered_list)
-        query = f"SELECT id, text, weight, attachment, lifespan, last_used FROM memories WHERE id IN ({placeholders}) LIMIT {limit}"
-        self.cursor.execute(query, tuple(int(i) for i in filtered_list))
+        query = f"""
+        SELECT id, text, weight, attachment, lifespan, last_used, memory_related_to 
+        FROM memories 
+        WHERE id IN ({placeholders}) 
+        ORDER BY 
+            CASE 
+                WHEN memory_related_to = ? THEN 0
+                WHEN memory_related_to NOT IN (?, 'global', 'self') THEN 1
+                WHEN memory_related_to IN ('global', 'self') THEN 2
+                ELSE 3
+            END,
+            weight DESC,
+            attachment DESC,
+            last_used DESC
+        LIMIT {limit}
+        """
+        
+        #? params 
+        params = tuple(int(i) for i in filtered_list) + (user_name, user_name)
+        
+        # execute 
+        self.cursor.execute(query, params)
+        # fetch the items
         results = self.cursor.fetchall()
         
+        #? filtering for the second time for closer response
         second_level_filtered_list = second_level_filtering(results)
-        #TODO: filter by relevant and emotional wight before that
-        return second_level_filtered_list
+        
+        # final filtering layer to ensure relevant memory
+        third_level_filtered_list = third_level_filtering(
+            user_related_ratio, 
+            other_users_related_ratio,
+            globally_related_ratio,
+            memories_count_threshold,
+            user_name,
+            second_level_filtered_list
+        )
+        
+        if(len(third_level_filtered_list) == 0):
+            print_log_message("No Memories related were found After Refiltering Second and Third Stage")
+        
+        return third_level_filtered_list

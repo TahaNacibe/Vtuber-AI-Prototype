@@ -18,11 +18,11 @@ def response_transformer(response: dict):
         
         # Step 4: Extract components
         message = data.get("response", "")
-        memories = data.get("memories", [])
-        blendshapes_data = data.get("blendshapes", {})
-        blendshapes = blendshapes_data["blendshapes"] if "blendshapes" in blendshapes_data else {}
+        new_memories = data.get("memories", [])
+        blendshapes_data = data.get("emote", "")
+        model_emote = blendshapes_data 
 
-        return message, memories, blendshapes
+        return message, new_memories, model_emote
 
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         raise RuntimeError(f"Failed to parse response: {e}")
